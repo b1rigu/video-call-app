@@ -41,6 +41,7 @@ export default function Room({ params }: { params: { id: string } }) {
           credential: "lHDCalLlJFsv/8Y/",
         },
       ],
+      iceCandidatePoolSize: 10,
     });
     setupSources();
 
