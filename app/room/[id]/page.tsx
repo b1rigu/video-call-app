@@ -237,6 +237,11 @@ export default function Room({ params }: { params: { id: string } }) {
         return;
       }
 
+      if (callDoc.length === 0) {
+        router.replace("/");
+        return;
+      }
+
       const call = callDoc[0];
       setCallId(call.id.toString());
       callId = call.id.toString();
