@@ -260,7 +260,7 @@ export default function Room({ params }: { params: { id: string } }) {
         .subscribe();
     }
 
-    pcRef.current.onconnectionstatechange = (event) => {
+    pcRef.current.onconnectionstatechange = () => {
       if (pcRef.current?.connectionState === "disconnected") {
         hangUp();
       }
