@@ -76,8 +76,7 @@ export default function Room({ params }: { params: { id: string } }) {
   const setupSources = async () => {
     if (!pcRef.current) return;
 
-    const mediaList = await navigator.mediaDevices.enumerateDevices();
-    console.log("mediaList", mediaList);
+    let callId = params.id ?? "";
 
     const localStream = await navigator.mediaDevices.getUserMedia({
       video: cameraId ? { deviceId: cameraId } : true,
@@ -121,7 +120,7 @@ export default function Room({ params }: { params: { id: string } }) {
 
       const createdCall = createdCallDoc[0];
       setCallId(createdCall.id.toString());
-      console.log("createdCall", createdCall.id);
+      callId = createdCall.id.toString();
 
       pcRef.current.onicecandidate = (event) => {
         event.candidate &&
@@ -155,7 +154,6 @@ export default function Room({ params }: { params: { id: string } }) {
           { event: "UPDATE", schema: "public", table: "calls", filter: `id=eq.${createdCall.id}` },
           async (payload) => {
             if (pcRef.current && !pcRef.current.currentRemoteDescription) {
-              console.log("on answer payload", payload);
               const answerDescription = new RTCSessionDescription({
                 sdp: payload.new.answer_sdp,
                 type: payload.new.answer_type,
@@ -209,13 +207,15 @@ export default function Room({ params }: { params: { id: string } }) {
             filter: `call_id=eq.${createdCall.id}`,
           },
           (payload) => {
-            const candidate = new RTCIceCandidate({
-              candidate: payload.new.candidate,
-              sdpMLineIndex: payload.new.sdpMLineIndex,
-              sdpMid: payload.new.sdpMid,
-              usernameFragment: payload.new.usernameFragment,
-            });
-            pcRef.current?.addIceCandidate(candidate);
+            if (pcRef.current && pcRef.current.currentRemoteDescription) {
+              const candidate = new RTCIceCandidate({
+                candidate: payload.new.candidate,
+                sdpMLineIndex: payload.new.sdpMLineIndex,
+                sdpMid: payload.new.sdpMid,
+                usernameFragment: payload.new.usernameFragment,
+              });
+              pcRef.current?.addIceCandidate(candidate);
+            }
           }
         )
         .subscribe();
@@ -239,6 +239,7 @@ export default function Room({ params }: { params: { id: string } }) {
 
       const call = callDoc[0];
       setCallId(call.id.toString());
+      callId = call.id.toString();
 
       pcRef.current.onicecandidate = (event) => {
         event.candidate &&
@@ -309,6 +310,19 @@ export default function Room({ params }: { params: { id: string } }) {
           },
           (payload) => {
             pcRef.current?.addIceCandidate(new RTCIceCandidate(payload.new));
+          }
+        )
+        .subscribe();
+    }
+
+    if (callId !== "") {
+      supabase
+        .channel("calls_delete")
+        .on(
+          "postgres_changes",
+          { event: "DELETE", schema: "public", table: "calls", filter: `id=eq.${callId}` },
+          async () => {
+            hangUp();
           }
         )
         .subscribe();
