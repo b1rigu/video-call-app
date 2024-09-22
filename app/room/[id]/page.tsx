@@ -13,36 +13,30 @@ export default function Room({ params }: { params: { id: string } }) {
   const pcRef: MutableRefObject<RTCPeerConnection | null> = useRef(null);
   const supabase = createClient();
   const [callId, setCallId] = useState<string>("");
+  const iceServerUrl = process.env.NEXT_PUBLIC_ICESERVER_URL;
+
+  async function setupIceServers() {
+    if (!iceServerUrl) return;
+
+    try {
+      const response = await fetch(iceServerUrl);
+
+      if (!response.ok) {
+        throw new Error("Error");
+      }
+
+      const iceServers = await response.json();
+
+      pcRef.current = new RTCPeerConnection({
+        iceServers: iceServers,
+        iceCandidatePoolSize: 10,
+      });
+    } catch (error) {
+      console.error("Failed to fetch ICE server list:", error);
+    }
+  }
 
   useEffect(() => {
-    pcRef.current = new RTCPeerConnection({
-      iceServers: [
-        {
-          urls: "stun:stun.l.google.com:19302",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:80",
-          username: "4fdfe467b079c722a6c4cc52",
-          credential: "lHDCalLlJFsv/8Y/",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:80?transport=tcp",
-          username: "4fdfe467b079c722a6c4cc52",
-          credential: "lHDCalLlJFsv/8Y/",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:443",
-          username: "4fdfe467b079c722a6c4cc52",
-          credential: "lHDCalLlJFsv/8Y/",
-        },
-        {
-          urls: "turns:global.relay.metered.ca:443?transport=tcp",
-          username: "4fdfe467b079c722a6c4cc52",
-          credential: "lHDCalLlJFsv/8Y/",
-        },
-      ],
-      iceCandidatePoolSize: 10,
-    });
     setupSources();
 
     return () => {
@@ -74,6 +68,8 @@ export default function Room({ params }: { params: { id: string } }) {
   };
 
   const setupSources = async () => {
+    await setupIceServers();
+
     if (!pcRef.current) return;
 
     let callId = params.id ?? "";
