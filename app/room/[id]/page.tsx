@@ -220,7 +220,7 @@ export default function Room({ params }: { params: { id: string } }) {
         )
         .subscribe();
     } else if (params.id) {
-      const { data: callDoc, error } = await supabase
+      const { data: callDoc, error: callError } = await supabase
         .from("calls")
         .select("id, offer_sdp, offer_type")
         .eq("id", params.id)
@@ -232,8 +232,8 @@ export default function Room({ params }: { params: { id: string } }) {
           }[]
         >();
 
-      if (error) {
-        console.log(error);
+      if (callError) {
+        console.log(callError);
         return;
       }
 
@@ -266,6 +266,35 @@ export default function Room({ params }: { params: { id: string } }) {
       };
 
       await supabase.from("calls").update(answer).eq("id", call.id);
+
+      const { data: offerCandidates, error } = await supabase
+        .from("offerCandidates")
+        .select("candidate, sdpMLineIndex, sdpMid, usernameFragment")
+        .eq("call_id", call.id)
+        .returns<
+          {
+            candidate: string;
+            sdpMLineIndex: number;
+            sdpMid: string;
+            usernameFragment: string;
+          }[]
+        >();
+
+      if (error) {
+        console.log(error);
+        return;
+      }
+
+      offerCandidates.forEach((candidate) => {
+        pcRef.current?.addIceCandidate(
+          new RTCIceCandidate({
+            candidate: candidate.candidate,
+            sdpMLineIndex: candidate.sdpMLineIndex,
+            sdpMid: candidate.sdpMid,
+            usernameFragment: candidate.usernameFragment,
+          })
+        );
+      });
 
       // TODO: finish a listener for offerCandidates
       supabase
