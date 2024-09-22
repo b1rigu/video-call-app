@@ -7,7 +7,7 @@ export default function Home() {
   const [roomId, setRoomId] = useState("");
 
   return (
-    <div className="flex h-screen items-center justify-center">
+    <div className="flex h-screen items-center justify-center p-8">
       <div className="text-center flex flex-col gap-4">
         <h1 className="text-3xl font-bold">Video Call App</h1>
         <p className="text-lg">

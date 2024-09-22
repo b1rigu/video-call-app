@@ -268,7 +268,7 @@ export default function Room({ params }: { params: { id: string } }) {
   };
 
   return (
-    <div className="text-center">
+    <div className="text-center p-8">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
         <div className="text-center">
           <video
