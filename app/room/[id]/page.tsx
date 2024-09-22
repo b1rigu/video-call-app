@@ -253,35 +253,35 @@ export default function Room({ params }: { params: { id: string } }) {
   }
 
   return (
-    <div className="text-center p-8">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
-        <div className="text-center">
-          <video
-            className="-scale-x-100 w-full aspect-video border-2 rounded-xl bg-black"
-            ref={localRef}
-            autoPlay
-            playsInline
-            muted
-          ></video>
-          <p className="font-bold text-2xl">Local</p>
-        </div>
-        <div className="text-center">
-          <video
-            className="-scale-x-100 w-full aspect-video border-2 rounded-xl bg-black"
-            ref={remoteRef}
-            autoPlay
-            playsInline
-          ></video>
-          <p className="font-bold text-2xl">Remote</p>
+    <div className="text-center h-screen">
+      <video
+        className="-scale-x-100 w-full h-full aspect-video border-2 rounded-xl bg-black"
+        ref={remoteRef}
+        autoPlay
+        playsInline
+      ></video>
+      <video
+        className="-scale-x-100 w-full max-w-48 sm:max-w-72 aspect-video border-2 rounded-xl bg-black fixed top-4 right-4"
+        ref={localRef}
+        autoPlay
+        playsInline
+        muted
+      ></video>
+      <div className="flex items-center justify-center fixed bottom-0 left-0 w-full h-48 opacity-0 hover:opacity-100 transition-opacity bg-gradient-to-t from-gray-800 to-transparent">
+        <div>
+          <button
+            className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded "
+            onClick={hangUp}
+          >
+            Hang Up
+          </button>
+          {callId && (
+            <div>
+              <p className="mt-4 text-white">Call ID: {callId}</p>
+            </div>
+          )}
         </div>
       </div>
-      {callId && <p className="mb-4">Call ID: {callId}</p>}
-      <button
-        className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
-        onClick={hangUp}
-      >
-        Hang Up
-      </button>
     </div>
   );
 }
