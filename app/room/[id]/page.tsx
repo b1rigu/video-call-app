@@ -345,7 +345,7 @@ export default function Room({ params }: { params: { id: string } }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
         <div className="text-center">
           <video
-            className="w-full aspect-video border-2 rounded-xl bg-black"
+            className="-scale-x-100 w-full aspect-video border-2 rounded-xl bg-black"
             ref={localRef}
             autoPlay
             playsInline
@@ -355,7 +355,7 @@ export default function Room({ params }: { params: { id: string } }) {
         </div>
         <div className="text-center">
           <video
-            className="w-full aspect-video border-2 rounded-xl bg-black"
+            className="-scale-x-100 w-full aspect-video border-2 rounded-xl bg-black"
             ref={remoteRef}
             autoPlay
             playsInline
