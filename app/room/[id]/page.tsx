@@ -16,7 +16,31 @@ export default function Room({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     pcRef.current = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      iceServers: [
+        {
+          urls: "stun:stun.l.google.com:19302",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80",
+          username: "4fdfe467b079c722a6c4cc52",
+          credential: "lHDCalLlJFsv/8Y/",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80?transport=tcp",
+          username: "4fdfe467b079c722a6c4cc52",
+          credential: "lHDCalLlJFsv/8Y/",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:443",
+          username: "4fdfe467b079c722a6c4cc52",
+          credential: "lHDCalLlJFsv/8Y/",
+        },
+        {
+          urls: "turns:global.relay.metered.ca:443?transport=tcp",
+          username: "4fdfe467b079c722a6c4cc52",
+          credential: "lHDCalLlJFsv/8Y/",
+        },
+      ],
     });
     setupSources();
 
