@@ -6,6 +6,10 @@ import { useRouter } from "next/navigation";
 import { MdOutlineCallEnd } from "react-icons/md";
 import { LuScreenShare } from "react-icons/lu";
 import { LuScreenShareOff } from "react-icons/lu";
+import { FiVideo } from "react-icons/fi";
+import { FiVideoOff } from "react-icons/fi";
+import { FiMic } from "react-icons/fi";
+import { FiMicOff } from "react-icons/fi";
 
 export default function Room({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -18,8 +22,12 @@ export default function Room({ params }: { params: { id: string } }) {
   const [callId, setCallId] = useState<string>("");
   const iceServerUrl = process.env.NEXT_PUBLIC_ICESERVER_URL;
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isSharingVideo, setIsSharingVideo] = useState(true);
 
   useEffect(() => {
+    setIsMobile(/Mobi|Android/i.test(navigator.userAgent));
     setupSources();
 
     return () => {
@@ -54,6 +62,52 @@ export default function Room({ params }: { params: { id: string } }) {
     } catch (error) {
       console.error("Failed to fetch ICE server list:", error);
     }
+  }
+
+  function hideVideo() {
+    if (localStreamRef.current) {
+      localStreamRef.current!.getVideoTracks().forEach((track) => {
+        track.enabled = false;
+      });
+    }
+    if (screenShareStreamRef.current) {
+      screenShareStreamRef.current!.getTracks().forEach((track) => {
+        track.enabled = false;
+      });
+    }
+    setIsSharingVideo(false);
+  }
+
+  function unhideVideo() {
+    if (localStreamRef.current) {
+      localStreamRef.current!.getVideoTracks().forEach((track) => {
+        track.enabled = true;
+      });
+    }
+    if (screenShareStreamRef.current) {
+      screenShareStreamRef.current!.getTracks().forEach((track) => {
+        track.enabled = true;
+      });
+    }
+    setIsSharingVideo(true);
+  }
+
+  function muteMicrophone() {
+    if (localStreamRef.current) {
+      localStreamRef.current!.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+      });
+    }
+    setIsMuted(true);
+  }
+
+  function unmuteMicrophone() {
+    if (localStreamRef.current) {
+      localStreamRef.current!.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+      });
+    }
+    setIsMuted(false);
   }
 
   async function stopScreenShare() {
@@ -313,7 +367,12 @@ export default function Room({ params }: { params: { id: string } }) {
           playsInline
         ></video>
       </div>
-      <div className="w-full max-w-48 sm:max-w-64 rounded-xl bg-black fixed top-4 right-4 aspect-video border-2 border-white/20 flex items-center justify-center">
+      <div
+        className={
+          "w-full max-w-48 sm:max-w-64 rounded-xl bg-black fixed top-4 right-4 aspect-video border-2 border-white/20 flex items-center justify-center" +
+          (isSharingVideo ? "" : " hidden")
+        }
+      >
         <video
           className="-scale-x-100 w-full h-full object-contain"
           ref={localRef}
@@ -323,27 +382,49 @@ export default function Room({ params }: { params: { id: string } }) {
         ></video>
       </div>
 
-      <div className="flex items-center justify-center gap-4 fixed bottom-0 left-0 w-full h-32 opacity-100 transition-opacity bg-gradient-to-t from-gray-800 to-transparent">
-        {callId && <p className="text-white">Call ID: {callId}</p>}
-        <button
-          className={
-            "hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" +
-            (isScreenSharing ? " bg-blue-700" : " bg-blue-500")
-          }
-          onClick={isScreenSharing ? stopScreenShare : startScreenShare}
-        >
-          {isScreenSharing ? (
-            <LuScreenShareOff className="text-xl" />
-          ) : (
-            <LuScreenShare className="text-xl" />
+      <div className="flex flex-col items-center justify-center gap-4 fixed bottom-0 left-0 w-full h-32 opacity-100 transition-opacity bg-gradient-to-t from-gray-800 to-transparent">
+        <div className="flex items-center gap-4">
+          <button
+            className={
+              "hover:bg-slate-700 text-white font-bold py-2 px-4 rounded" +
+              (isSharingVideo ? " bg-slate-500" : " bg-slate-700")
+            }
+            onClick={isSharingVideo ? hideVideo : unhideVideo}
+          >
+            {isSharingVideo ? <FiVideo className="text-xl" /> : <FiVideoOff className="text-xl" />}
+          </button>
+          <button
+            className={
+              "hover:bg-slate-700 text-white font-bold py-2 px-4 rounded" +
+              (isMuted ? " bg-slate-700" : " bg-slate-500")
+            }
+            onClick={isMuted ? unmuteMicrophone : muteMicrophone}
+          >
+            {isMuted ? <FiMicOff className="text-xl" /> : <FiMic className="text-xl" />}
+          </button>
+          {!isMobile && (
+            <button
+              className={
+                "hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" +
+                (isScreenSharing ? " bg-blue-700" : " bg-blue-500")
+              }
+              onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+            >
+              {isScreenSharing ? (
+                <LuScreenShareOff className="text-xl" />
+              ) : (
+                <LuScreenShare className="text-xl" />
+              )}
+            </button>
           )}
-        </button>
-        <button
-          className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded "
-          onClick={hangUp}
-        >
-          <MdOutlineCallEnd className="text-xl" />
-        </button>
+          <button
+            className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded "
+            onClick={hangUp}
+          >
+            <MdOutlineCallEnd className="text-xl" />
+          </button>
+        </div>
+        {callId && <p className="text-white">Call ID: {callId}</p>}
       </div>
     </div>
   );
