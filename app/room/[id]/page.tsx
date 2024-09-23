@@ -28,10 +28,17 @@ export default function Room({ params }: { params: { id: string } }) {
   const [isSharingVideo, setIsSharingVideo] = useState(true);
 
   useEffect(() => {
+    const handleUnload = (event: any) => {
+      supabase.from("calls").delete().eq("id", callIdRef.current).then();
+    };
+
     setIsMobile(/Mobi|Android/i.test(navigator.userAgent));
     setupSources();
 
+    window.addEventListener("unload", handleUnload);
+
     return () => {
+      window.removeEventListener("unload", handleUnload);
       hangUp();
     };
   }, []);
@@ -185,7 +192,6 @@ export default function Room({ params }: { params: { id: string } }) {
     if (!localCallId) return;
 
     setCallId(localCallId);
-    callIdRef.current = localCallId;
 
     setupRoomDeleteListener(localCallId);
   }
@@ -194,6 +200,7 @@ export default function Room({ params }: { params: { id: string } }) {
     const { data: createdCall, error } = await supabase.from("calls").insert({}).select().single();
     if (error) return null;
 
+    callIdRef.current = createdCall.id;
     setupOnIceCandidate(createdCall.id, "offerCandidates");
     await createAndSendOffer(createdCall.id);
 
@@ -233,6 +240,7 @@ export default function Room({ params }: { params: { id: string } }) {
       return null;
     }
 
+    callIdRef.current = call.id;
     setupOnIceCandidate(call.id, "answerCandidates");
     await setRemoteOffer({ sdp: call.offer_sdp, type: call.offer_type });
     await createAndSendAnswer(call.id);
@@ -253,10 +261,10 @@ export default function Room({ params }: { params: { id: string } }) {
     return call.id.toString();
   }
 
-  async function hangUp() {
-    pcRef.current!.close();
+  function hangUp() {
     supabase.from("calls").delete().eq("id", callIdRef.current).then();
     supabase.removeAllChannels().then();
+    pcRef.current!.close();
 
     stopStreams(localRef.current);
     stopStreams(remoteRef.current);
