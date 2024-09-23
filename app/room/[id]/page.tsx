@@ -28,7 +28,7 @@ export default function Room({ params }: { params: { id: string } }) {
   const [isSharingVideo, setIsSharingVideo] = useState(true);
 
   useEffect(() => {
-    const handleUnload = (event: any) => {
+    const handleUnload = () => {
       supabase.from("calls").delete().eq("id", callIdRef.current).then();
     };
 
