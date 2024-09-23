@@ -20,6 +20,7 @@ export default function Room({ params }: { params: { id: string } }) {
   const screenShareStreamRef = useRef<MediaStream | null>(null);
   const supabase = createClient();
   const [callId, setCallId] = useState<string>("");
+  const callIdRef = useRef<string>("");
   const iceServerUrl = process.env.NEXT_PUBLIC_ICESERVER_URL;
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -31,17 +32,16 @@ export default function Room({ params }: { params: { id: string } }) {
     setupSources();
 
     return () => {
-      stopStreams(localRef.current);
-      stopStreams(remoteRef.current);
+      hangUp();
     };
   }, []);
 
-  const stopStreams = (videoElement: HTMLVideoElement | null) => {
+  function stopStreams(videoElement: HTMLVideoElement | null) {
     if (videoElement && videoElement.srcObject) {
       const stream = videoElement.srcObject as MediaStream;
       stream.getTracks().forEach((track) => track.stop());
     }
-  };
+  }
 
   async function setupIceServers() {
     if (!iceServerUrl) return;
@@ -156,7 +156,7 @@ export default function Room({ params }: { params: { id: string } }) {
     }
   }
 
-  const setupSources = async () => {
+  async function setupSources() {
     await setupIceServers();
     if (!pcRef.current) return;
 
@@ -185,9 +185,10 @@ export default function Room({ params }: { params: { id: string } }) {
     if (!localCallId) return;
 
     setCallId(localCallId);
+    callIdRef.current = localCallId;
 
     setupRoomDeleteListener(localCallId);
-  };
+  }
 
   async function startCall(): Promise<string | null> {
     const { data: createdCall, error } = await supabase.from("calls").insert({}).select().single();
@@ -252,19 +253,16 @@ export default function Room({ params }: { params: { id: string } }) {
     return call.id.toString();
   }
 
-  const hangUp = async () => {
+  async function hangUp() {
     pcRef.current!.close();
-
-    await supabase.removeAllChannels();
-    supabase.from("calls").delete().eq("id", params.id).then();
-    supabase.from("offerCandidates").delete().eq("call_id", params.id).then();
-    supabase.from("answerCandidates").delete().eq("call_id", params.id).then();
+    supabase.from("calls").delete().eq("id", callIdRef.current).then();
+    supabase.removeAllChannels().then();
 
     stopStreams(localRef.current);
     stopStreams(remoteRef.current);
 
     router.replace("/");
-  };
+  }
 
   function setupOnIceCandidate(localCallId: number, table: string) {
     pcRef.current!.onicecandidate = (event) => {
