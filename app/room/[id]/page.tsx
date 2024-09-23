@@ -2,18 +2,22 @@
 
 import { createClient } from "@/utils/supabase/client";
 import { MutableRefObject, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { MdOutlineCallEnd } from "react-icons/md";
+import { LuScreenShare } from "react-icons/lu";
+import { LuScreenShareOff } from "react-icons/lu";
 
 export default function Room({ params }: { params: { id: string } }) {
-  const searchParams = useSearchParams();
-  const cameraId = searchParams.get("cameraId");
   const router = useRouter();
   const localRef = useRef<HTMLVideoElement | null>(null);
   const remoteRef = useRef<HTMLVideoElement | null>(null);
   const pcRef: MutableRefObject<RTCPeerConnection | null> = useRef(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const screenShareStreamRef = useRef<MediaStream | null>(null);
   const supabase = createClient();
   const [callId, setCallId] = useState<string>("");
   const iceServerUrl = process.env.NEXT_PUBLIC_ICESERVER_URL;
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   useEffect(() => {
     setupSources();
@@ -52,28 +56,75 @@ export default function Room({ params }: { params: { id: string } }) {
     }
   }
 
+  async function stopScreenShare() {
+    screenShareStreamRef.current!.getTracks().forEach((track) => track.stop());
+    const localStream = localStreamRef.current!;
+    const videoSender = pcRef.current!.getSenders().find((sender) => {
+      return sender.track!.kind === "video";
+    });
+    if (videoSender) {
+      videoSender.replaceTrack(localStream.getVideoTracks()[0]);
+      localRef.current!.srcObject = localStream;
+      setIsScreenSharing(false);
+    }
+  }
+
+  async function startScreenShare() {
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false, // Set to true if you also want to capture audio
+      });
+      localRef.current!.srcObject = screenStream;
+      screenShareStreamRef.current = screenStream;
+
+      // Get the video track from the screen share stream
+      const screenTrack = screenStream.getVideoTracks()[0];
+
+      // Find the video sender in the peer connection
+      const videoSender = pcRef.current!.getSenders().find((sender) => {
+        return sender.track!.kind === "video";
+      });
+
+      // Replace the current video track with the screen share track
+      if (videoSender) {
+        videoSender.replaceTrack(screenTrack);
+
+        setIsScreenSharing(true);
+
+        // Optionally, you can listen for when the user stops sharing the screen
+        screenTrack.onended = () => {
+          stopScreenShare();
+        };
+      }
+    } catch (error) {
+      console.error("Error switching to screen share: ", error);
+    }
+  }
+
   const setupSources = async () => {
     await setupIceServers();
     if (!pcRef.current) return;
 
     const localStream = await navigator.mediaDevices.getUserMedia({
-      video: cameraId ? { deviceId: cameraId } : true,
+      video: true,
       audio: true,
     });
+    localStreamRef.current = localStream;
     const remoteStream = new MediaStream();
 
     localStream.getTracks().forEach((track) => {
-      pcRef.current?.addTrack(track, localStream);
+      pcRef.current!.addTrack(track, localStream);
     });
 
-    pcRef.current.ontrack = (event) => {
+    pcRef.current!.ontrack = (event) => {
       event.streams[0].getTracks().forEach((track) => {
         remoteStream.addTrack(track);
       });
     };
 
-    if (localRef.current) localRef.current.srcObject = localStream;
-    if (remoteRef.current) remoteRef.current.srcObject = remoteStream;
+    localRef.current!.srcObject = localStream;
+    remoteRef.current!.srcObject = remoteStream;
 
     const localCallId = params.id === "start" ? await startCall() : await joinCall();
 
@@ -254,33 +305,45 @@ export default function Room({ params }: { params: { id: string } }) {
 
   return (
     <div className="text-center h-screen">
-      <video
-        className="-scale-x-100 w-full h-full aspect-video border-2 rounded-xl bg-black"
-        ref={remoteRef}
-        autoPlay
-        playsInline
-      ></video>
-      <video
-        className="-scale-x-100 w-full max-w-48 sm:max-w-72 aspect-video border-2 rounded-xl bg-black fixed top-4 right-4"
-        ref={localRef}
-        autoPlay
-        playsInline
-        muted
-      ></video>
-      <div className="flex items-center justify-center fixed bottom-0 left-0 w-full h-48 opacity-0 hover:opacity-100 transition-opacity bg-gradient-to-t from-gray-800 to-transparent">
-        <div>
-          <button
-            className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded "
-            onClick={hangUp}
-          >
-            Hang Up
-          </button>
-          {callId && (
-            <div>
-              <p className="mt-4 text-white">Call ID: {callId}</p>
-            </div>
+      <div className="w-full h-full bg-black flex items-center justify-center">
+        <video
+          className="-scale-x-100 w-full h-full object-contain"
+          ref={remoteRef}
+          autoPlay
+          playsInline
+        ></video>
+      </div>
+      <div className="w-full max-w-48 sm:max-w-64 rounded-xl bg-black fixed top-4 right-4 aspect-video border-2 border-white/20 flex items-center justify-center">
+        <video
+          className="-scale-x-100 w-full h-full object-contain"
+          ref={localRef}
+          autoPlay
+          playsInline
+          muted
+        ></video>
+      </div>
+
+      <div className="flex items-center justify-center gap-4 fixed bottom-0 left-0 w-full h-32 opacity-100 transition-opacity bg-gradient-to-t from-gray-800 to-transparent">
+        {callId && <p className="text-white">Call ID: {callId}</p>}
+        <button
+          className={
+            "hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" +
+            (isScreenSharing ? " bg-blue-700" : " bg-blue-500")
+          }
+          onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+        >
+          {isScreenSharing ? (
+            <LuScreenShareOff className="text-xl" />
+          ) : (
+            <LuScreenShare className="text-xl" />
           )}
-        </div>
+        </button>
+        <button
+          className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded "
+          onClick={hangUp}
+        >
+          <MdOutlineCallEnd className="text-xl" />
+        </button>
       </div>
     </div>
   );
