@@ -72,7 +72,7 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
             : false,
         audio:
           localDevices.audioInputs.length > 0
-            ? { deviceId: localDevices.audioInputs[0].deviceId, noiseSuppression: true }
+            ? { deviceId: localDevices.audioInputs[0].deviceId }
             : false,
       });
       localStreamRef.current = localStream;
