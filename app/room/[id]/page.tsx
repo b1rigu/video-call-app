@@ -3,20 +3,39 @@
 import { createClient } from "@/utils/supabase/client";
 import { MutableRefObject, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MdOutlineCallEnd } from "react-icons/md";
-import { LuScreenShare } from "react-icons/lu";
-import { LuScreenShareOff } from "react-icons/lu";
-import { FiVideo } from "react-icons/fi";
-import { FiVideoOff } from "react-icons/fi";
-import { FiMic } from "react-icons/fi";
-import { FiMicOff } from "react-icons/fi";
+import {
+  Mic,
+  MicOff,
+  MonitorUp,
+  MonitorX,
+  PhoneMissed,
+  Settings,
+  Video,
+  VideoOff,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function Room({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const localRef = useRef<HTMLVideoElement | null>(null);
-  const remoteRef = useRef<HTMLVideoElement | null>(null);
-  const pcRef: MutableRefObject<RTCPeerConnection | null> = useRef(null);
+  const localVideoElementRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteVideoElementRef = useRef<HTMLVideoElement | null>(null);
+  const pcRef: MutableRefObject<RTCPeerConnection | null> = useRef(null);
   const screenShareStreamRef = useRef<MediaStream | null>(null);
   const supabase = createClient();
   const [callId, setCallId] = useState<string>("");
@@ -26,14 +45,19 @@ export default function Room({ params }: { params: { id: string } }) {
   const [isMobile, setIsMobile] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isSharingVideo, setIsSharingVideo] = useState(true);
+  const [selectedAudio, setSelectedAudio] = useState<string>("");
+  const [selectedVideo, setSelectedVideo] = useState<string>("");
+  const [devices, setDevices] = useState<{
+    audioInputs: MediaDeviceInfo[];
+    videoInputs: MediaDeviceInfo[];
+  }>({
+    audioInputs: [],
+    videoInputs: [],
+  });
 
   useEffect(() => {
-    const handleUnload = () => {
-      supabase.from("calls").delete().eq("id", callIdRef.current).then();
-    };
-
     setIsMobile(/Mobi|Android/i.test(navigator.userAgent));
-    setupSources();
+    setupWebRTC();
 
     window.addEventListener("unload", handleUnload);
 
@@ -42,6 +66,113 @@ export default function Room({ params }: { params: { id: string } }) {
       hangUp();
     };
   }, []);
+
+  function handleUnload() {
+    supabase.from("calls").delete().eq("id", callIdRef.current).then();
+  }
+
+  async function setupWebRTC() {
+    const devices = await getDevices();
+    setDevices(devices);
+
+    try {
+      await setupIceServers();
+      if (!pcRef.current) return;
+
+      if (devices.audioInputs.length > 0 || devices.videoInputs.length > 0) {
+        const localStream = await navigator.mediaDevices.getUserMedia({
+          video:
+            devices.videoInputs.length > 0 ? { deviceId: devices.videoInputs[0].deviceId } : false,
+          audio:
+            devices.audioInputs.length > 0
+              ? { deviceId: devices.audioInputs[0].deviceId, noiseSuppression: true }
+              : false,
+        });
+        localStreamRef.current = localStream;
+        localStream.getTracks().forEach((track) => {
+          pcRef.current!.addTrack(track, localStream);
+        });
+        localVideoElementRef.current!.srcObject = localStream;
+      }
+
+      const remoteStream = new MediaStream();
+      pcRef.current!.ontrack = (event) => {
+        event.streams[0].getTracks().forEach((track) => {
+          remoteStream.addTrack(track);
+        });
+      };
+      remoteVideoElementRef.current!.srcObject = remoteStream;
+
+      const localCallId = params.id === "start" ? await startCall() : await joinCall();
+
+      if (!localCallId) return;
+
+      setCallId(localCallId);
+
+      setupRoomDeleteListener(localCallId);
+    } catch (error) {
+      console.error("Error accessing media devices:", error);
+    }
+  }
+
+  async function getDevices() {
+    await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => {});
+    const audioDeviceList = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = audioDeviceList.filter(
+      (device) => device.kind === "audioinput" && device.deviceId !== ""
+    );
+
+    await navigator.mediaDevices.getUserMedia({ video: true }).catch(() => {});
+    const allDeviceList = await navigator.mediaDevices.enumerateDevices();
+    const videoInputs = allDeviceList.filter(
+      (device) => device.kind === "videoinput" && device.deviceId !== ""
+    );
+    return {
+      audioInputs,
+      videoInputs,
+    };
+  }
+
+  async function changeMediaDevice(constraints: MediaStreamConstraints) {
+    const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+    newStream.getTracks().forEach((track) => {
+      const existingTrack = pcRef
+        .current!.getSenders()
+        .find((sender) => sender.track!.kind === track.kind);
+      if (existingTrack) {
+        existingTrack.replaceTrack(track);
+      } else {
+        pcRef.current!.addTrack(track, newStream);
+      }
+    });
+
+    localVideoElementRef.current!.srcObject = newStream;
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => {
+        if (track.kind !== "video" && track.kind !== "audio") return;
+        track.stop();
+      });
+    }
+
+    localStreamRef.current = newStream;
+  }
+
+  async function changeCamera(deviceId: string) {
+    const constraints = {
+      audio: selectedAudio ? { deviceId: selectedAudio } : false,
+      video: { deviceId: deviceId },
+    };
+    changeMediaDevice(constraints);
+  }
+
+  async function changeMicrophone(deviceId: string) {
+    const constraints = {
+      audio: { deviceId: deviceId },
+      video: selectedVideo ? { deviceId: selectedVideo } : false,
+    };
+    changeMediaDevice(constraints);
+  }
 
   function stopStreams(videoElement: HTMLVideoElement | null) {
     if (videoElement && videoElement.srcObject) {
@@ -71,61 +202,48 @@ export default function Room({ params }: { params: { id: string } }) {
     }
   }
 
-  function hideVideo() {
+  function changeVideoState(enabled: boolean) {
     if (localStreamRef.current) {
       localStreamRef.current!.getVideoTracks().forEach((track) => {
-        track.enabled = false;
+        track.enabled = enabled;
       });
     }
-    if (screenShareStreamRef.current) {
-      screenShareStreamRef.current!.getTracks().forEach((track) => {
-        track.enabled = false;
-      });
-    }
-    setIsSharingVideo(false);
+    setIsSharingVideo(enabled);
+  }
+
+  function hideVideo() {
+    changeVideoState(false);
   }
 
   function unhideVideo() {
+    changeVideoState(true);
+  }
+
+  function changeMicrophoneState(enabled: boolean) {
     if (localStreamRef.current) {
-      localStreamRef.current!.getVideoTracks().forEach((track) => {
-        track.enabled = true;
+      localStreamRef.current!.getAudioTracks().forEach((track) => {
+        track.enabled = enabled;
       });
     }
-    if (screenShareStreamRef.current) {
-      screenShareStreamRef.current!.getTracks().forEach((track) => {
-        track.enabled = true;
-      });
-    }
-    setIsSharingVideo(true);
+    setIsMuted(!enabled);
   }
 
   function muteMicrophone() {
-    if (localStreamRef.current) {
-      localStreamRef.current!.getAudioTracks().forEach((track) => {
-        track.enabled = false;
-      });
-    }
-    setIsMuted(true);
+    changeMicrophoneState(false);
   }
 
   function unmuteMicrophone() {
-    if (localStreamRef.current) {
-      localStreamRef.current!.getAudioTracks().forEach((track) => {
-        track.enabled = true;
-      });
-    }
-    setIsMuted(false);
+    changeMicrophoneState(true);
   }
 
   async function stopScreenShare() {
     screenShareStreamRef.current!.getTracks().forEach((track) => track.stop());
-    const localStream = localStreamRef.current!;
     const videoSender = pcRef.current!.getSenders().find((sender) => {
       return sender.track!.kind === "video";
     });
     if (videoSender) {
-      videoSender.replaceTrack(localStream.getVideoTracks()[0]);
-      localRef.current!.srcObject = localStream;
+      videoSender.replaceTrack(localStreamRef.current!.getVideoTracks()[0]);
+      localVideoElementRef.current!.srcObject = localStreamRef.current!;
       setIsScreenSharing(false);
     }
   }
@@ -134,26 +252,22 @@ export default function Room({ params }: { params: { id: string } }) {
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: false, // Set to true if you also want to capture audio
+        audio: false,
       });
-      localRef.current!.srcObject = screenStream;
+      localVideoElementRef.current!.srcObject = screenStream;
       screenShareStreamRef.current = screenStream;
 
-      // Get the video track from the screen share stream
       const screenTrack = screenStream.getVideoTracks()[0];
 
-      // Find the video sender in the peer connection
       const videoSender = pcRef.current!.getSenders().find((sender) => {
         return sender.track!.kind === "video";
       });
 
-      // Replace the current video track with the screen share track
       if (videoSender) {
         videoSender.replaceTrack(screenTrack);
 
         setIsScreenSharing(true);
 
-        // Optionally, you can listen for when the user stops sharing the screen
         screenTrack.onended = () => {
           stopScreenShare();
         };
@@ -161,39 +275,6 @@ export default function Room({ params }: { params: { id: string } }) {
     } catch (error) {
       console.error("Error switching to screen share: ", error);
     }
-  }
-
-  async function setupSources() {
-    await setupIceServers();
-    if (!pcRef.current) return;
-
-    const localStream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
-    localStreamRef.current = localStream;
-    const remoteStream = new MediaStream();
-
-    localStream.getTracks().forEach((track) => {
-      pcRef.current!.addTrack(track, localStream);
-    });
-
-    pcRef.current!.ontrack = (event) => {
-      event.streams[0].getTracks().forEach((track) => {
-        remoteStream.addTrack(track);
-      });
-    };
-
-    localRef.current!.srcObject = localStream;
-    remoteRef.current!.srcObject = remoteStream;
-
-    const localCallId = params.id === "start" ? await startCall() : await joinCall();
-
-    if (!localCallId) return;
-
-    setCallId(localCallId);
-
-    setupRoomDeleteListener(localCallId);
   }
 
   async function startCall(): Promise<string | null> {
@@ -266,8 +347,8 @@ export default function Room({ params }: { params: { id: string } }) {
     supabase.removeAllChannels().then();
     pcRef.current!.close();
 
-    stopStreams(localRef.current);
-    stopStreams(remoteRef.current);
+    stopStreams(localVideoElementRef.current);
+    stopStreams(remoteVideoElementRef.current);
 
     router.replace("/");
   }
@@ -367,8 +448,8 @@ export default function Room({ params }: { params: { id: string } }) {
     <div className="text-center h-screen">
       <div className="w-full h-full bg-black flex items-center justify-center">
         <video
-          className="-scale-x-100 w-full h-full object-contain"
-          ref={remoteRef}
+          className="w-full h-full object-contain"
+          ref={remoteVideoElementRef}
           autoPlay
           playsInline
         ></video>
@@ -381,7 +462,7 @@ export default function Room({ params }: { params: { id: string } }) {
       >
         <video
           className="-scale-x-100 w-full h-full object-contain"
-          ref={localRef}
+          ref={localVideoElementRef}
           autoPlay
           playsInline
           muted
@@ -390,45 +471,100 @@ export default function Room({ params }: { params: { id: string } }) {
 
       <div className="flex flex-col items-center justify-center gap-4 fixed bottom-0 left-0 w-full h-32 opacity-100 transition-opacity bg-gradient-to-t from-gray-800 to-transparent">
         <div className="flex items-center gap-4">
-          <button
-            className={
-              "hover:bg-slate-700 text-white font-bold py-2 px-4 rounded" +
-              (isSharingVideo ? " bg-slate-500" : " bg-slate-700")
-            }
+          <Button
+            disabled={devices.videoInputs.length === 0}
             onClick={isSharingVideo ? hideVideo : unhideVideo}
+            variant={isSharingVideo ? "outline" : "secondary"}
+            size="icon"
           >
-            {isSharingVideo ? <FiVideo className="text-xl" /> : <FiVideoOff className="text-xl" />}
-          </button>
-          <button
-            className={
-              "hover:bg-slate-700 text-white font-bold py-2 px-4 rounded" +
-              (isMuted ? " bg-slate-700" : " bg-slate-500")
-            }
+            {isSharingVideo ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+          </Button>
+          <Button
+            disabled={devices.audioInputs.length === 0}
             onClick={isMuted ? unmuteMicrophone : muteMicrophone}
+            variant={isMuted ? "secondary" : "outline"}
+            size="icon"
           >
-            {isMuted ? <FiMicOff className="text-xl" /> : <FiMic className="text-xl" />}
-          </button>
+            {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+          </Button>
           {!isMobile && (
-            <button
-              className={
-                "hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" +
-                (isScreenSharing ? " bg-blue-700" : " bg-blue-500")
-              }
+            <Button
               onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+              variant="outline"
+              size="icon"
             >
               {isScreenSharing ? (
-                <LuScreenShareOff className="text-xl" />
+                <MonitorX className="h-5 w-5" />
               ) : (
-                <LuScreenShare className="text-xl" />
+                <MonitorUp className="h-5 w-5" />
               )}
-            </button>
+            </Button>
           )}
-          <button
-            className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded "
-            onClick={hangUp}
-          >
-            <MdOutlineCallEnd className="text-xl" />
-          </button>
+          <Button onClick={hangUp} variant="destructive" size="icon">
+            <PhoneMissed className="h-5 w-5" />
+          </Button>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="secondary" size="icon">
+                <Settings className="h-5 w-5" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Settings</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right">Camera</Label>
+                  <Select
+                    disabled={devices.videoInputs.length === 0}
+                    defaultValue={devices.videoInputs[0]?.deviceId ?? ""}
+                    onValueChange={(value) => {
+                      setSelectedVideo(value);
+                      changeCamera(value);
+                    }}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Select a camera" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {devices.videoInputs.map((videoInput) => {
+                        return (
+                          <SelectItem key={videoInput.deviceId} value={videoInput.deviceId}>
+                            {videoInput.label}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right">Microphone</Label>
+                  <Select
+                    disabled={devices.audioInputs.length === 0}
+                    defaultValue={devices.audioInputs[0]?.deviceId ?? ""}
+                    onValueChange={(value) => {
+                      setSelectedAudio(value);
+                      changeMicrophone(value);
+                    }}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Select a microphone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {devices.audioInputs.map((audioInput) => {
+                        return (
+                          <SelectItem key={audioInput.deviceId} value={audioInput.deviceId}>
+                            {audioInput.label}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
         {callId && <p className="text-white">Call ID: {callId}</p>}
       </div>
