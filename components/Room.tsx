@@ -49,7 +49,7 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
     const localDevices = await getDevices();
     setDevices(localDevices);
 
-    setupTracks(localDevices);
+    await setupTracks(localDevices);
 
     const localCallId = params.id === "start" ? await startCall() : await joinCall();
 
