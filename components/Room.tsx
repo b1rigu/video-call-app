@@ -73,31 +73,37 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
     audioInputs: MediaDeviceInfo[];
     videoInputs: MediaDeviceInfo[];
   }) {
-    if (localDevices.audioInputs.length > 0 || localDevices.videoInputs.length > 0) {
-      const localStream = await navigator.mediaDevices.getUserMedia({
-        video:
-          localDevices.videoInputs.length > 0
-            ? { deviceId: localDevices.videoInputs[0].deviceId }
-            : false,
-        audio:
-          localDevices.audioInputs.length > 0
-            ? { deviceId: localDevices.audioInputs[0].deviceId }
-            : false,
-      });
-      localStreamRef.current = localStream;
-      localStream.getTracks().forEach((track) => {
-        pcRef.current!.addTrack(track, localStream);
-      });
-      if (localVideoElementRef.current) localVideoElementRef.current.srcObject = localStream;
-    }
+    try {
+      if (localDevices.audioInputs.length > 0 || localDevices.videoInputs.length > 0) {
+        const localStream = await navigator.mediaDevices.getUserMedia({
+          video:
+            localDevices.videoInputs.length > 0
+              ? { deviceId: localDevices.videoInputs[0].deviceId }
+              : false,
+          audio:
+            localDevices.audioInputs.length > 0
+              ? { deviceId: localDevices.audioInputs[0].deviceId }
+              : false,
+        });
+        localStreamRef.current = localStream;
+        if (pcRef.current!.signalingState !== "closed") {
+          localStream.getTracks().forEach((track) => {
+            pcRef.current!.addTrack(track, localStream);
+          });
+        }
+        if (localVideoElementRef.current) localVideoElementRef.current.srcObject = localStream;
+      }
 
-    const remoteStream = new MediaStream();
-    pcRef.current!.ontrack = (event) => {
-      event.streams[0].getTracks().forEach((track) => {
-        remoteStream.addTrack(track);
-      });
-    };
-    if (remoteVideoElementRef.current) remoteVideoElementRef.current.srcObject = remoteStream;
+      const remoteStream = new MediaStream();
+      pcRef.current!.ontrack = (event) => {
+        event.streams[0].getTracks().forEach((track) => {
+          remoteStream.addTrack(track);
+        });
+      };
+      if (remoteVideoElementRef.current) remoteVideoElementRef.current.srcObject = remoteStream;
+    } catch (error) {
+      console.error("Error setting up tracks: ", error);
+    }
   }
 
   async function getDevices() {
@@ -318,18 +324,20 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
   }
 
   async function createAndSendOffer(localCallId: number) {
-    const offerDescription = await pcRef.current!.createOffer({
-      offerToReceiveVideo: true,
-      offerToReceiveAudio: true,
-    });
-    await pcRef.current!.setLocalDescription(offerDescription);
-    await supabase
-      .from("calls")
-      .update({
-        offer_sdp: offerDescription.sdp,
-        offer_type: offerDescription.type,
-      })
-      .eq("id", localCallId);
+    if (pcRef.current!.signalingState !== "closed") {
+      const offerDescription = await pcRef.current!.createOffer({
+        offerToReceiveVideo: true,
+        offerToReceiveAudio: true,
+      });
+      await pcRef.current!.setLocalDescription(offerDescription);
+      await supabase
+        .from("calls")
+        .update({
+          offer_sdp: offerDescription.sdp,
+          offer_type: offerDescription.type,
+        })
+        .eq("id", localCallId);
+    }
   }
 
   async function createAndSendAnswer(localCallId: number) {
