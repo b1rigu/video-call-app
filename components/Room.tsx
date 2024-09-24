@@ -3,24 +3,29 @@
 import { createClient } from "@/utils/supabase/client";
 import { MutableRefObject, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mic, MicOff, MonitorUp, MonitorX, PhoneMissed, Video, VideoOff } from "lucide-react";
+import {
+  FlipHorizontal2,
+  Mic,
+  MicOff,
+  MonitorUp,
+  MonitorX,
+  PhoneMissed,
+  Video,
+  VideoOff,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import MediaSettings from "@/components/MediaSettings";
 
 export default function Room({ params, iceServers }: { params: { id: string }; iceServers: [] }) {
   const supabase = createClient();
   const router = useRouter();
-  const pcRef: MutableRefObject<RTCPeerConnection> = useRef(
-    new RTCPeerConnection({
-      iceServers: iceServers,
-      iceCandidatePoolSize: 10,
-    })
-  );
+  const pcRef: MutableRefObject<RTCPeerConnection | null> = useRef(null);
   const localVideoElementRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteVideoElementRef = useRef<HTMLVideoElement | null>(null);
   const callIdRef = useRef<string>("");
 
+  const [isMirrored, setIsMirrored] = useState(true);
   const [callId, setCallId] = useState<string>("");
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -45,6 +50,10 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
   }, []);
 
   async function setupWebRTC() {
+    pcRef.current = new RTCPeerConnection({
+      iceServers: iceServers,
+      iceCandidatePoolSize: 10,
+    });
     setIsMobile(/Mobi|Android/i.test(navigator.userAgent));
     const localDevices = await getDevices();
     setDevices(localDevices);
@@ -77,13 +86,13 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
       });
       localStreamRef.current = localStream;
       localStream.getTracks().forEach((track) => {
-        pcRef.current.addTrack(track, localStream);
+        pcRef.current!.addTrack(track, localStream);
       });
       if (localVideoElementRef.current) localVideoElementRef.current.srcObject = localStream;
     }
 
     const remoteStream = new MediaStream();
-    pcRef.current.ontrack = (event) => {
+    pcRef.current!.ontrack = (event) => {
       event.streams[0].getTracks().forEach((track) => {
         remoteStream.addTrack(track);
       });
@@ -118,7 +127,7 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
       if (existingTrack) {
         existingTrack.replaceTrack(track);
       } else {
-        pcRef.current.addTrack(track, newStream);
+        pcRef.current!.addTrack(track, newStream);
       }
     });
 
@@ -175,7 +184,7 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
         if (existingTrack) {
           existingTrack.replaceTrack(track);
         } else {
-          pcRef.current.addTrack(track, screenStream);
+          pcRef.current!.addTrack(track, screenStream);
         }
       });
 
@@ -217,7 +226,7 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
 
     setupListener("calls", "calls", `id=eq.${createdCall.id}`, async (payload) => {
       if (payload.eventType === "UPDATE") {
-        if (!pcRef.current.currentRemoteDescription) {
+        if (!pcRef.current!.currentRemoteDescription) {
           setUserAnsweredCall(true);
           await setRemoteOffer({ sdp: payload.new.answer_sdp, type: payload.new.answer_type });
           setPrefetchedCandidates("answerCandidates", createdCall.id);
@@ -231,8 +240,8 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
       `call_id=eq.${createdCall.id}`,
       async (payload) => {
         if (payload.eventType === "INSERT") {
-          if (!pcRef.current.currentRemoteDescription) return;
-          pcRef.current.addIceCandidate(new RTCIceCandidate(payload.new));
+          if (!pcRef.current!.currentRemoteDescription) return;
+          pcRef.current!.addIceCandidate(new RTCIceCandidate(payload.new));
         }
       }
     );
@@ -266,8 +275,8 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
       `call_id=eq.${call.id}`,
       async (payload) => {
         if (payload.eventType === "INSERT") {
-          if (!pcRef.current.currentRemoteDescription) return;
-          pcRef.current.addIceCandidate(new RTCIceCandidate(payload.new));
+          if (!pcRef.current!.currentRemoteDescription) return;
+          pcRef.current!.addIceCandidate(new RTCIceCandidate(payload.new));
         }
       }
     );
@@ -282,7 +291,7 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
   function hangUp() {
     deleteCurrentCallData();
     supabase.removeAllChannels().then();
-    pcRef.current.close();
+    pcRef.current!.close();
 
     stopStreams(localVideoElementRef.current);
     stopStreams(remoteVideoElementRef.current);
@@ -294,7 +303,7 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
   }
 
   function setupOnIceCandidate(localCallId: number, table: string) {
-    pcRef.current.onicecandidate = (event) => {
+    pcRef.current!.onicecandidate = (event) => {
       event.candidate &&
         supabase
           .from(table)
@@ -305,15 +314,15 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
 
   async function setRemoteOffer(description: { sdp: string; type: RTCSdpType }) {
     const offerDescription = new RTCSessionDescription(description);
-    await pcRef.current.setRemoteDescription(offerDescription);
+    await pcRef.current!.setRemoteDescription(offerDescription);
   }
 
   async function createAndSendOffer(localCallId: number) {
-    const offerDescription = await pcRef.current.createOffer({
+    const offerDescription = await pcRef.current!.createOffer({
       offerToReceiveVideo: true,
       offerToReceiveAudio: true,
     });
-    await pcRef.current.setLocalDescription(offerDescription);
+    await pcRef.current!.setLocalDescription(offerDescription);
     await supabase
       .from("calls")
       .update({
@@ -324,8 +333,8 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
   }
 
   async function createAndSendAnswer(localCallId: number) {
-    const answerDescription = await pcRef.current.createAnswer();
-    await pcRef.current.setLocalDescription(answerDescription);
+    const answerDescription = await pcRef.current!.createAnswer();
+    await pcRef.current!.setLocalDescription(answerDescription);
     await supabase
       .from("calls")
       .update({
@@ -352,7 +361,7 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
     if (error) return null;
 
     candidates.forEach((candidate) => {
-      pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      pcRef.current!.addIceCandidate(new RTCIceCandidate(candidate));
     });
   }
 
@@ -368,15 +377,15 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
       .subscribe();
   }
 
-  async function setupRoomDeleteListener(localCallId: string) {
+  function setupRoomDeleteListener(localCallId: string) {
     if (localCallId !== "") {
-      setupListener("calls_delete", "calls", `id=eq.${localCallId}`, async (payload) => {
+      setupListener("calls_delete", "calls", `id=eq.${localCallId}`, (payload) => {
         payload.eventType === "DELETE" ? hangUp() : null;
       });
     }
 
-    pcRef.current.onconnectionstatechange = () => {
-      if (pcRef.current.connectionState === "disconnected") {
+    pcRef.current!.onconnectionstatechange = () => {
+      if (pcRef.current!.connectionState === "disconnected") {
         hangUp();
       }
     };
@@ -405,7 +414,7 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
         }
       >
         <video
-          className="-scale-x-100 w-full h-full object-contain"
+          className={"w-full h-full object-contain" + (isMirrored ? " -scale-x-100" : "")}
           ref={localVideoElementRef}
           autoPlay
           playsInline
@@ -415,6 +424,14 @@ export default function Room({ params, iceServers }: { params: { id: string }; i
 
       <div className="flex flex-col items-center justify-center gap-4 fixed bottom-0 left-0 w-full h-32 opacity-100 transition-opacity bg-gradient-to-t from-gray-800 to-transparent">
         <div className="flex items-center gap-4">
+          <Button
+            disabled={devices.videoInputs.length === 0}
+            onClick={() => setIsMirrored(!isMirrored)}
+            variant="outline"
+            size="icon"
+          >
+            <FlipHorizontal2 className="h-5 w-5" />
+          </Button>
           <Button
             disabled={devices.videoInputs.length === 0}
             onClick={switchVideoState}
